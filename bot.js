@@ -13,7 +13,7 @@ import { setMaxIdleHTTPParsers } from 'http';
 dotenv.config()
 const token = "6780323540:AAGbOQ0nwrcoFbq0WSieCwCXSnsveKxj1BU"
 const bot = new TelegramBot(token, { polling: true })
-const gifPath = './berry.png';
+const gifPath = './fox.png';
 let chatId = '-1001995381972';
 let nPrevSequenceNumber = 0;
 let bBotStart = false;
@@ -27,7 +27,7 @@ const connection = new web3.Connection(
 const VAULT_SEED = "VAULT_SEED";
 
 // The public key of the account you're interested in
-const programId = new web3.PublicKey('4VUZQ2Tbx3BM9iq6DBH5fTk4oQ3iNZcC9qoUJUBhyyRs');
+const programId = new web3.PublicKey('FgyMJpHWhHsgdeNPnoyuRLcgqxcRihadnP2vtCJga9mn');
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -49,12 +49,33 @@ const getVaultKey = async () => {
   return vaultKey;
 };
 
+
+
 bot.onText(/\/berry/, (msg) => {
   chatId = msg.chat.id;
   console.log("received!", chatId);
 });
 
 let msgCount = 0;
+
+async function getSolPrice() {
+  try {
+    // Make a request to the CoinGecko API to get the SOL price
+    const response = await axios.get('https://api.coingecko.com/api/v3/simple/price', {
+      params: {
+        ids: 'solana',
+        vs_currencies: 'usd', // You can change this to other fiat currencies
+      },
+    });
+
+    // Extract the SOL price from the response
+    const solPrice = response.data.solana.usd;
+
+    console.log('Current SOL Price:', solPrice);
+  } catch (error) {
+    console.error('Error fetching SOL price:', error.message);
+  }
+}
 
 const ExecuteFunction = async () => {
 
@@ -66,12 +87,11 @@ const ExecuteFunction = async () => {
     programId,
     {
       until: lastSignature,
-      limit: 1000,
+      limit: 3,
     },
     'confirmed',
   );
 
-  // console.log(signatures);
   let contractBalance;
 
   const vaultKey = await getVaultKey();
@@ -83,6 +103,7 @@ const ExecuteFunction = async () => {
 
     if (signatures.length == 0)
       return;
+
     try {
       lastSignature = oldestToLatest[oldestToLatest.length - 1].signature;
     } catch (e) {
@@ -95,107 +116,61 @@ const ExecuteFunction = async () => {
     for (let i = 0; i < oldestToLatest.length; i++) {
       const signature = oldestToLatest[i];
       let tx;
-      
-      try{
+
+      try {
         tx = await connection.getParsedTransaction(signature.signature, {
           commitment: "confirmed",
         });
-      }catch(e){
+      } catch (e) {
         console.log("error", e);
       }
-      // console.log("tx", tx);
-      // console.log("txffff", tx.transaction.message.accountKeys);
+
       let events;
-      let accounts;
+      let solAmount = (tx.meta.preBalances[0] - tx.meta.postBalances[0]) / web3.LAMPORTS_PER_SOL;
+      let idx = 0;
 
       try {
         events = tx.meta.logMessages;
-        accounts = tx.transaction.message.accountKeys;
       } catch (e) {
         console.log(e);
         console.log(tx);
         continue;
       }
 
-      let accountSigner = "";
-      let command = "";
-      let amount = "";
-      let solAmount = (tx.meta.preBalances[0] - tx.meta.postBalances[0]) / web3.LAMPORTS_PER_SOL;
-      let idx = 0;
-
-      for (idx = 0; idx < accounts.length; idx++) {
-        if (accounts[idx].signer == true) {
-          accountSigner = accounts[idx].pubkey.toString();
-          break;
-        }
-      }
-
-      idx = 0;
-
       while (idx < events.length) {
 
-        try{
+        try {
           if (events[idx].indexOf("BuyOranges") != -1) {
-          
-            command = "BuyOranges";
-            let prefixAmount = "Program log: hatch new_miners: ";
-            let idxj = idx+1;
-            while (events[idxj].indexOf(prefixAmount) == -1 && idxj - 1 < events.length) {
-              idxj++;
-            }
-            console.log("events[idxj + 1]", idxj, events[idxj]);
-            amount = events[idxj ].substring(prefixAmount.length);
-  
-          } else if (events[idx].indexOf("HatchOranges") != -1) {
-  
-            command = "HatchOranges";
-            let prefixAmount = "Program log: hatch new_miners: ";
-            while (events[idx + 1].indexOf(prefixAmount) == -1 && idx - 1 < events.length) {
-              idx++;
-            }
-            amount = events[idx + 1].substring(prefixAmount.length);
           } else {
             idx++;
             continue;
           }
-  
-          msgCount++;
-          console.log("msgCount", msgCount);
-          console.log("amount", amount);
-  
-          let msg = "🍓🍓 Berry Buy! 🍓🍓" +
+
+          let msg = "New deposit in Degen Miner!" +
             "\n\n";
-  
-          if (command == "BuyOranges") {
-            msg += "New Buy!" + "\n\n";
-          } else {
-            msg += "Compounded !" + "\n\n";
-          }
-  
-          // console.log("amount", amount);
-  
-          for (let j = 0; j < (amount / 100000000000000); j++) {
-            msg += "🍓";
-          }
-  
+
+          msg += "New Buy!" + "\n\n";
+
+          const solPrice = await getSolPrice();
+
           msg += "\n\n" +
-            "<b>Buy:</b>" + " " + solAmount + " SOL for " + amount + " Berries\n" +
-            "<b>TVL:</b>" + " " + contractBalance + " SOL\n" +
+            "<b>Buy Amount:</b>" + " " + solAmount + " SOL / $" + solAmount * solPrice + "\n" +
+            "<b>TVL Amount:</b>" + " " + contractBalance + " SOL / $"+ contractBalance * solPrice +"\n" +
             "\n\n" +
-            "<a href=\"https://solscan.io/tx/" + signature.signature + "?cluster=devnet\">Tx</a>" + " | " + "<a href=\"https://berryminer.xyz\">DAPP</a>" + " | " + "<a href=\"https://solscan.io/address/" + accountSigner + "?cluster=devnet\">Buyer</a>";
-  
+            "<a href=\"https://solscan.io/tx/" + signature.signature + "?cluster=devnet\">Tx</a>" + " | " + "<a href=\"https://degenminer.xyz\">DAPP</a>" + " | ";
+
           // console.log("msg", msg);
-  
+
           bot.sendVideo(chatId, gifPath, {
             caption: msg,
             parse_mode: 'HTML'
           });
-  
-        }catch(e){
+
+        } catch (e) {
           console.log("error", e);
         }
-        
-        await sleep(2000);
+
+        await sleep(3000);
         // console.log("signature", signature);
         idx++;
       }
@@ -209,12 +184,12 @@ if (bot.isPolling()) {
 }
 
 var interval = setInterval(function () {
-  try{
+  try {
     ExecuteFunction();
-  }catch(e){
-    console.log("error",e);
+  } catch (e) {
+    console.log("error", e);
   }
-  
+
 }, 3000);
 
 // ExecuteFunction();
